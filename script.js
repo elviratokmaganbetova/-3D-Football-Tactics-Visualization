@@ -8,6 +8,16 @@ let players = [];
 let animations = [];
 let animationMixer;
 let clock = new THREE.Clock();
+// Добавляем переменные для работы с перетаскиванием и стрелками
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+let selectedPlayer = null;
+let isDragging = false;
+let arrowStart = null;
+let arrows = [];
+let arrowHelper = null;
+let isDrawingArrow = false;
+let dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 // Размеры поля (в метрах)
 const fieldLength = 105;
@@ -54,6 +64,12 @@ function init() {
     
     // Обработчики событий
     window.addEventListener('resize', onWindowResize);
+    
+    // Добавляем обработчики для перетаскивания и создания стрелок
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
+    renderer.domElement.addEventListener('mousemove', onMouseMove);
+    renderer.domElement.addEventListener('mouseup', onMouseUp);
+    renderer.domElement.addEventListener('dblclick', onDoubleClick);
     
     document.getElementById('defaultFormation').addEventListener('click', () => {
         clearPlayers();
@@ -281,6 +297,8 @@ function onWindowResize() {
 
 // Очистка игроков
 function clearPlayers() {
+    clearArrows();
+    
     for (const player of players) {
         scene.remove(player);
     }
@@ -406,6 +424,146 @@ function setupDefenseFormation() {
     createPlayer(new THREE.Vector3(fieldLength/2 - 55, 1, -18), 0x0000ff, 9);
     createPlayer(new THREE.Vector3(fieldLength/2 - 55, 1, 0), 0x0000ff, 10);
     createPlayer(new THREE.Vector3(fieldLength/2 - 55, 1, 18), 0x0000ff, 11);
+}
+
+// Функция для выбора игрока с помощью raycaster
+function findIntersectedPlayer(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(players, true);
+    
+    if (intersects.length > 0) {
+        // Ищем родительский объект (игрока) в группе
+        let playerObj = intersects[0].object;
+        while (playerObj.parent && !players.includes(playerObj)) {
+            playerObj = playerObj.parent;
+        }
+        
+        if (players.includes(playerObj)) {
+            return playerObj;
+        }
+    }
+    
+    return null;
+}
+
+// Получение точки в 3D пространстве на плоскости поля
+function getIntersectionPoint(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    raycaster.setFromCamera(mouse, camera);
+    
+    const intersectionPoint = new THREE.Vector3();
+    raycaster.ray.intersectPlane(dragPlane, intersectionPoint);
+    
+    // Ограничиваем перемещение в пределах поля
+    intersectionPoint.x = Math.max(-fieldLength/2, Math.min(fieldLength/2, intersectionPoint.x));
+    intersectionPoint.z = Math.max(-fieldWidth/2, Math.min(fieldWidth/2, intersectionPoint.z));
+    intersectionPoint.y = 1; // Высота игрока
+    
+    return intersectionPoint;
+}
+
+// Обработчик события mousedown
+function onMouseDown(event) {
+    if (event.button === 0) { // Левая кнопка мыши
+        const player = findIntersectedPlayer(event);
+        
+        if (player) {
+            selectedPlayer = player;
+            isDragging = true;
+            controls.enabled = false; // Отключаем OrbitControls во время перетаскивания
+            
+            if (event.shiftKey) {
+                // Если зажат Shift, начинаем рисовать стрелку
+                isDrawingArrow = true;
+                arrowStart = player.position.clone();
+                
+                // Создаем временную стрелку
+                const direction = new THREE.Vector3(0, 0, -1);
+                const length = 0;
+                const arrowColor = new THREE.Color(player.userData.teamColor);
+                arrowHelper = new THREE.ArrowHelper(direction, arrowStart, length, arrowColor, 2, 1);
+                scene.add(arrowHelper);
+            }
+        }
+    }
+}
+
+// Обработчик события mousemove
+function onMouseMove(event) {
+    if (isDragging && selectedPlayer) {
+        const intersectionPoint = getIntersectionPoint(event);
+        
+        if (isDrawingArrow) {
+            // Обновляем стрелку во время рисования
+            const direction = new THREE.Vector3().subVectors(intersectionPoint, arrowStart).normalize();
+            const length = arrowStart.distanceTo(intersectionPoint);
+            arrowHelper.setDirection(direction);
+            arrowHelper.setLength(length, 2, 1);
+        } else {
+            // Перемещаем игрока
+            selectedPlayer.position.copy(intersectionPoint);
+        }
+    }
+}
+
+// Обработчик события mouseup
+function onMouseUp(event) {
+    if (isDragging && selectedPlayer) {
+        if (isDrawingArrow) {
+            // Завершаем рисование стрелки
+            const intersectionPoint = getIntersectionPoint(event);
+            const direction = new THREE.Vector3().subVectors(intersectionPoint, arrowStart).normalize();
+            const length = arrowStart.distanceTo(intersectionPoint);
+            
+            if (length > 1) { // Минимальная длина стрелки для срабатывания
+                // Сохраняем стрелку в массив
+                arrows.push(arrowHelper);
+                
+                // Анимируем перемещение игрока
+                animatePlayer(selectedPlayer, intersectionPoint);
+            } else {
+                // Удаляем временную стрелку, если слишком короткая
+                scene.remove(arrowHelper);
+            }
+            
+            isDrawingArrow = false;
+        }
+        
+        isDragging = false;
+        selectedPlayer = null;
+        controls.enabled = true; // Возвращаем управление камерой
+    }
+}
+
+// Обработчик двойного клика для удаления стрелки
+function onDoubleClick(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(arrows, true);
+    
+    if (intersects.length > 0) {
+        const arrow = intersects[0].object.parent;
+        scene.remove(arrow);
+        arrows = arrows.filter(a => a !== arrow);
+    }
+}
+
+// Очистка стрелок
+function clearArrows() {
+    for (const arrow of arrows) {
+        scene.remove(arrow);
+    }
+    arrows = [];
 }
 
 // Функция анимации
