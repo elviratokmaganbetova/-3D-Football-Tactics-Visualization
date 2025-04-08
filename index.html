@@ -1,0 +1,36 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Football Tactics Visualization</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "three/OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="container">
+        <div id="visualization"></div>
+        <div id="controls">
+            <h2>Тактические схемы</h2>
+            <button id="defaultFormation">4-4-2 Классическая</button>
+            <button id="attackFormation">4-3-3 Атакующая</button>
+            <button id="defenseFormation">5-3-2 Оборонительная</button>
+            <button id="resetPlayers">Сбросить</button>
+            <div id="info">
+                <h3>Управление</h3>
+                <p>Вращение: ЛКМ + Перетаскивание</p>
+                <p>Масштаб: Колесо мыши</p>
+                <p>Перемещение: ПКМ + Перетаскивание</p>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="script.js"></script>
+</body>
+</html>
